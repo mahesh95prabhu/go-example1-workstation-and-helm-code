@@ -1,0 +1,100 @@
+---
+apiVersion: v1
+
+kind: PersistentVolume
+
+metadata:
+
+  name: task-pv-volume
+
+  labels:
+
+    type: local
+
+spec:
+
+  storageClassName: manual
+
+  capacity:
+
+    storage: 10Mi
+
+  accessModes:
+
+    - ReadWriteOnce
+
+  hostPath:
+
+    path: "/mnt/data"
+
+---
+apiVersion: v1
+
+kind: PersistentVolumeClaim
+
+metadata:
+
+  name: task-pv-claim
+
+spec:
+
+  storageClassName: manual
+
+  accessModes:
+
+    - ReadWriteOnce
+
+  resources:
+
+    requests:
+
+      storage: 5Mi
+
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "my-microservice.fullname" . }}
+  labels:
+    {{- include "my-microservice.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "my-microservice.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "my-microservice.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "my-microservice.serviceAccountName" . }}
+      volumes:
+        - name: task-pv-storage
+          persistentVolumeClaim:
+            claimName: task-pv-claim
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          volumeMounts:
+          - mountPath: "/app/static"
+            name: task-pv-storage
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
